@@ -11,11 +11,7 @@ import tiktoken
 from streamlit_chat import message
 import os
 from dotenv import load_dotenv
-
-# 환경 변수 로드
 load_dotenv()
-
-# 환경 변수에서 API 키 가져오기
 NOTION_API_KEY = os.getenv('NOTION_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
@@ -36,33 +32,45 @@ def get_page_text(page_id: str, headers: dict):
         for item in blocks.get('results', []):
             item_type = item.get('type')
             content = item.get(item_type, {})
-            
-            if content.get('rich_text'):
-                for text in content.get('rich_text', []):
+
+            # 텍스트 블록 처리
+            rich_texts = content.get('rich_text', [])
+            if rich_texts and isinstance(rich_texts, list):
+                for text in rich_texts:
                     plain_text = text.get('plain_text', '')
                     if plain_text:
                         page_text.append(plain_text)
-            
+
+            # 코드 블록 처리
             elif item_type == 'code':
-                code = content.get('rich_text', [{}])[0].get('plain_text', '')
-                if code:
-                    page_text.append(f"코드: {code}")
-            
+                rich_texts = content.get('rich_text', [])
+                if rich_texts and isinstance(rich_texts, list):
+                    code = rich_texts[0].get('plain_text', '')
+                    if code:
+                        page_text.append(f"코드: {code}")
+
+            # 이미지 블록 처리
             elif item_type == 'image':
                 image_url = content.get('file', {}).get('url', '')
                 if image_url:
                     page_text.append(f"이미지: {image_url}")
-            
+
+            # 제목 블록 처리
             elif item_type in ['heading_1', 'heading_2', 'heading_3']:
-                heading = content.get('rich_text', [{}])[0].get('plain_text', '')
-                if heading:
-                    page_text.append(f"제목: {heading}")
-            
+                rich_texts = content.get('rich_text', [])
+                if rich_texts and isinstance(rich_texts, list):
+                    heading = rich_texts[0].get('plain_text', '')
+                    if heading:
+                        page_text.append(f"제목: {heading}")
+
+            # 리스트 블록 처리
             elif item_type in ['bulleted_list_item', 'numbered_list_item']:
-                list_item = content.get('rich_text', [{}])[0].get('plain_text', '')
-                if list_item:
-                    page_text.append(f"• {list_item}")
-        
+                rich_texts = content.get('rich_text', [])
+                if rich_texts and isinstance(rich_texts, list):
+                    list_item = rich_texts[0].get('plain_text', '')
+                    if list_item:
+                        page_text.append(f"• {list_item}")
+
         return page_text
     except Exception as e:
         st.error(f"페이지 내용을 가져오는 중 오류가 발생했습니다: {str(e)}")
@@ -148,7 +156,8 @@ def connect_to_vectorstore():
     return client
 
 def load_data_into_vectorstore(qdrant_client, docs: List[str], openai_api_key: str):
-    embeddings = OpenAIEmbeddings(model="text-embedding-ada-002", openai_api_key=openai_api_key)
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+    embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
     vectorstore = Qdrant(client=qdrant_client, collection_name="notion_streamlit", embedding_function=embeddings.embed_query)
     ids = vectorstore.add_texts(docs)
     return ids
@@ -161,9 +170,8 @@ def cache_headers(notion_api_key: str):
 
 @st.cache_resource
 def load_chain(_client, api_key: str):
-    if len(api_key) == 0:
-        api_key = "temp value"
-    embeddings = OpenAIEmbeddings(model="text-embedding-ada-002", openai_api_key=api_key)
+    os.environ["OPENAI_API_KEY"] = api_key
+    embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
     vectorstore = Qdrant(client=_client, collection_name="notion_streamlit", embedding_function=embeddings.embed_query)
     chain = ConversationalRetrievalChain.from_llm(
             llm=ChatOpenAI(temperature=0.0, model_name='gpt-3.5-turbo',
